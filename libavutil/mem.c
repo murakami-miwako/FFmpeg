@@ -42,8 +42,20 @@
 #include "dynarray.h"
 #include "intreadwrite.h"
 #include "mem.h"
+#include "atomic.h"
+
+int malloc_count = 0;
+int realloc_count = 0;
+int free_count = 0;
+
+void avutil_print_stats() {
+  printf("MALLOC: %d\n", avpriv_atomic_int_get(&malloc_count));
+  printf("REALLOC: %d\n", avpriv_atomic_int_get(&realloc_count));
+  printf("FREE: %d\n", avpriv_atomic_int_get(&free_count));
+}
 
 #ifdef MALLOC_PREFIX
+
 
 #define malloc         AV_JOIN(MALLOC_PREFIX, malloc)
 #define memalign       AV_JOIN(MALLOC_PREFIX, memalign)
@@ -56,6 +68,7 @@ void *memalign(size_t align, size_t size);
 int   posix_memalign(void **ptr, size_t align, size_t size);
 void *realloc(void *ptr, size_t size);
 void  free(void *ptr);
+
 
 #endif /* MALLOC_PREFIX */
 
@@ -139,11 +152,15 @@ void *av_malloc(size_t size)
     if (ptr)
         memset(ptr, FF_MEMORY_POISON, size);
 #endif
+    if (ptr != NULL) {
+      avpriv_atomic_int_add_and_fetch(&malloc_count, 1);
+    }
     return ptr;
 }
 
 void *av_realloc(void *ptr, size_t size)
 {
+  avpriv_atomic_int_add_and_fetch(&realloc_count, 1);
 #if CONFIG_MEMALIGN_HACK
     int diff;
 #endif
@@ -165,7 +182,15 @@ void *av_realloc(void *ptr, size_t size)
 #elif HAVE_ALIGNED_MALLOC
     return _aligned_realloc(ptr, size + !size, ALIGN);
 #else
-    return realloc(ptr, size + !size);
+    void *ptr2 = av_malloc(size + !size);
+    if (ptr2 == NULL) {
+      return NULL;
+    }
+    if (ptr != NULL) {
+      memcpy(ptr2, ptr, size + !size);
+      av_free(ptr);
+    }
+    return ptr2;
 #endif
 }
 
@@ -227,6 +252,9 @@ int av_reallocp_array(void *ptr, size_t nmemb, size_t size)
 
 void av_free(void *ptr)
 {
+  if (ptr) {
+    avpriv_atomic_int_add_and_fetch(&free_count, 1);
+  }
 #if CONFIG_MEMALIGN_HACK
     if (ptr) {
         int v= ((char *)ptr)[-1];

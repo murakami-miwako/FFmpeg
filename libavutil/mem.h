@@ -33,6 +33,8 @@
 #include "error.h"
 #include "avutil.h"
 
+void avutil_print_stats(void);
+
 /**
  * @addtogroup lavu_mem
  * @{
@@ -71,6 +73,7 @@
 #else
     #define av_alloc_size(...)
 #endif
+
 
 /**
  * Allocate a block of size bytes with alignment suitable for all
